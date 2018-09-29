@@ -1084,20 +1084,26 @@ void FAnimNode_FullbodyIKPractice::CalcJacobian(const FEffectorInternal& Effecto
 			ParentWorldRotation = GetWorldSpaceBoneRotation(ParentBoneIndex);
 		}
 
-		if (SolverInternal.bTranslation) //TODO:これってなんだろう？ヤコビアンって変数としてジョイントのオイラー角しか考慮してないって思ってたけど、実はtranslationも考慮してるってこと？
+		if (SolverInternal.bTranslation) // bTranslation=Trueのときは、各ジョイントのRotationでなくTranslationを使ってIKをやる
 		{
 			FVector DVec[AXIS_COUNT];
 			DVec[0] = FVector(1, 0, 0);
 			DVec[1] = FVector(0, 1, 0);
 			DVec[2] = FVector(0, 0, 1);
-			// 多分、Tが、
-			// T=|000X|
-			//   |000Y|
-			//   |000Z|
-			//   |0001|
-			// なので、それをX,Y,Zでそれぞれ微分したものは上記ベクトルにあたるのだろう
-			// それとも、そもそも最初からオイラー角以外はIK計算には入れるつもりはなく、微分なんてしてないのか？
-			// if (SolverInternal.bTranslation)のelse側を見ると、どうも微分なんてしてないように見えるが
+			// Tが、
+			// Trans=|1000|
+			//       |0100|
+			//       |0010|
+			//       |XYZ1|
+			// なので、IKとして動かせる変数は各ジョイントのXYZとなる
+			// DiffXTrans=|0000|
+			//            |0000|
+			//            |0000|
+			//            |1000|
+			// となる。DiffYTransとDiffZTransは1の位置が変わるだけ。
+			// この行列でヤコビアンを計算すると、下のように
+			//	FVector DVec3 = ParentWorldRotation.RotateVector(DVec[Axis]);
+			// となり、自分のジョイントより子供のジョイントのRotationやTranslationは影響しなくなるのは計算してみるとわかる
 
 			for (int32 Axis = 0; Axis < AXIS_COUNT; ++Axis)
 			{
@@ -1105,8 +1111,6 @@ void FAnimNode_FullbodyIKPractice::CalcJacobian(const FEffectorInternal& Effecto
 				int32 JacobianIndex1 = SolverInternal.BoneIndicesIndex * AXIS_COUNT;
 				int32 JacobianIndex2 = Axis;
 
-				// TODO:ここが肝なのだがどうもよくわからないな。。一体何を計算しているんだ？
-				// BoneIndexより子孫のやつのRotationを無視する、ということに見えるが
 				FVector DVec3 = ParentWorldRotation.RotateVector(DVec[Axis]);
 
 				// [行の番号*AXIS_COUNT + 列の番号] 列の数がAXIS_COUNTなので
@@ -1117,7 +1121,7 @@ void FAnimNode_FullbodyIKPractice::CalcJacobian(const FEffectorInternal& Effecto
 		}
 		else
 		{
-			// こっちは普通のヤコビアンの計算方法なので理解できる
+			// こっちは普通のヤコビアンの計算方法
 			FVector DeltaLocation = EndSolverLocation - GetWorldSpaceBoneLocation(BoneIndex);
 			FVector UnrotateDeltaLocation = GetWorldSpaceBoneRotation(BoneIndex).UnrotateVector(DeltaLocation);
 			FRotator BoneRotation = GetLocalSpaceBoneRotation(BoneIndex).Rotator();
